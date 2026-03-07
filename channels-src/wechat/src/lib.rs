@@ -62,6 +62,9 @@ struct WeChatMessageMetadata {
     to_user: String,
     /// Message type for context.
     msg_type: String,
+    /// Target agent for keyword-based routing (if matched).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_agent: Option<String>,
 }
 
 /// Cached access token with expiry.
@@ -278,12 +281,25 @@ fn handle_message(req: IncomingHttpRequest) -> OutgoingHttpResponse {
         send_typing_indicator(&from_user);
     }
 
+    // Route to specific agent based on message content keywords.
+    // For voice messages, use recognition text (content is empty for voice).
+    let route_text = if !content.is_empty() { &content } else { &recognition };
+    let target_agent = route_by_keywords(route_text);
+
     let metadata = WeChatMessageMetadata {
         from_user: from_user.clone(),
         to_user: to_user.clone(),
         msg_type: msg_type.clone(),
+        target_agent: target_agent.clone(),
     };
     let metadata_json = serde_json::to_string(&metadata).unwrap_or_default();
+
+    if let Some(ref agent) = target_agent {
+        channel_host::log(
+            channel_host::LogLevel::Info,
+            &format!("Keyword routing → agent '{agent}'"),
+        );
+    }
 
     match msg_type.as_str() {
         "text" => {
@@ -381,6 +397,58 @@ fn handle_message(req: IncomingHttpRequest) -> OutgoingHttpResponse {
     // Return immediate "success" response to avoid WeChat's 5-second timeout.
     // The actual reply is sent via Customer Service API in on_respond.
     http_response(200, "success")
+}
+
+// ============================================================================
+// Keyword-Based Agent Routing
+// ============================================================================
+
+/// Route incoming message to a specific agent based on keyword matching.
+/// Returns the agent ID if a keyword match is found, or None for default routing
+/// (which falls through to the main/Iron agent).
+///
+/// Priority order: newsbot > tutor > zoe
+fn route_by_keywords(text: &str) -> Option<String> {
+    if text.is_empty() {
+        return None;
+    }
+
+    let lower = text.to_lowercase();
+
+    // newsbot (TechPulse 科技脉搏): 科技资讯相关
+    const NEWSBOT_KEYWORDS: &[&str] = &[
+        "资讯", "新闻", "digest", "news", "日报", "科技",
+    ];
+
+    // tutor (学术助教): 学术相关
+    const TUTOR_KEYWORDS: &[&str] = &[
+        "讲义", "作业", "homework", "lecture", "课程", "笔记",
+    ];
+
+    // zoe (开发编排): 开发相关
+    const ZOE_KEYWORDS: &[&str] = &[
+        "zoe", "开发", "施工", "dev", "code", "编码",
+    ];
+
+    for kw in NEWSBOT_KEYWORDS {
+        if lower.contains(kw) {
+            return Some("newsbot".to_string());
+        }
+    }
+
+    for kw in TUTOR_KEYWORDS {
+        if lower.contains(kw) {
+            return Some("tutor".to_string());
+        }
+    }
+
+    for kw in ZOE_KEYWORDS {
+        if lower.contains(kw) {
+            return Some("zoe".to_string());
+        }
+    }
+
+    None
 }
 
 // ============================================================================
@@ -898,6 +966,47 @@ mod tests {
         // Verify it's a valid 40-char hex string
         assert_eq!(hash.len(), 40);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_route_by_keywords_newsbot() {
+        assert_eq!(route_by_keywords("今日资讯"), Some("newsbot".to_string()));
+        assert_eq!(route_by_keywords("看看新闻"), Some("newsbot".to_string()));
+        assert_eq!(route_by_keywords("tech news today"), Some("newsbot".to_string()));
+        assert_eq!(route_by_keywords("morning digest"), Some("newsbot".to_string()));
+        assert_eq!(route_by_keywords("今天的科技日报"), Some("newsbot".to_string()));
+    }
+
+    #[test]
+    fn test_route_by_keywords_tutor() {
+        assert_eq!(route_by_keywords("生成讲义"), Some("tutor".to_string()));
+        assert_eq!(route_by_keywords("帮我写作业"), Some("tutor".to_string()));
+        assert_eq!(route_by_keywords("homework help"), Some("tutor".to_string()));
+        assert_eq!(route_by_keywords("课程笔记"), Some("tutor".to_string()));
+        assert_eq!(route_by_keywords("lecture notes"), Some("tutor".to_string()));
+    }
+
+    #[test]
+    fn test_route_by_keywords_zoe() {
+        assert_eq!(route_by_keywords("zoe 帮我"), Some("zoe".to_string()));
+        assert_eq!(route_by_keywords("开发一个功能"), Some("zoe".to_string()));
+        assert_eq!(route_by_keywords("写个code"), Some("zoe".to_string()));
+        assert_eq!(route_by_keywords("编码任务"), Some("zoe".to_string()));
+    }
+
+    #[test]
+    fn test_route_by_keywords_default() {
+        assert_eq!(route_by_keywords("你好"), None);
+        assert_eq!(route_by_keywords("今天天气怎么样"), None);
+        assert_eq!(route_by_keywords(""), None);
+        assert_eq!(route_by_keywords("hello world"), None);
+    }
+
+    #[test]
+    fn test_route_by_keywords_case_insensitive() {
+        assert_eq!(route_by_keywords("NEWS today"), Some("newsbot".to_string()));
+        assert_eq!(route_by_keywords("HOMEWORK"), Some("tutor".to_string()));
+        assert_eq!(route_by_keywords("ZOE"), Some("zoe".to_string()));
     }
 
     #[test]
