@@ -264,7 +264,13 @@ impl Config {
             tunnel: TunnelConfig::resolve(settings)?,
             channels: ChannelsConfig::resolve(settings)?,
             agent: AgentConfig::resolve(settings)?,
-            agents: AgentsConfig::default(), // TODO: parse from TOML [[agents.list]]
+            agents: if settings.agents.list.is_empty() {
+                AgentsConfig::default()
+            } else {
+                AgentsConfig {
+                    list: settings.agents.list.clone(),
+                }
+            },
             safety: SafetyConfig::resolve()?,
             wasm: WasmConfig::resolve()?,
             secrets: SecretsConfig::resolve().await?,

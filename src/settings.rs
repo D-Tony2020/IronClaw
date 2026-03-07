@@ -99,6 +99,21 @@ pub struct Settings {
     /// Builder configuration.
     #[serde(default)]
     pub builder: BuilderSettings,
+
+    /// Multi-agent definitions.
+    ///
+    /// Parsed from `[[agents.list]]` in TOML config. When empty, the
+    /// system falls back to a single "main" agent with global defaults.
+    #[serde(default)]
+    pub agents: AgentsSettings,
+}
+
+/// Multi-agent configuration from TOML.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentsSettings {
+    /// Agent definitions parsed from `[[agents.list]]`.
+    #[serde(default)]
+    pub list: Vec<crate::config::agents::AgentDefinition>,
 }
 
 /// Source for the secrets master key.
