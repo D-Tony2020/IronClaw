@@ -11,6 +11,7 @@
 //! - Context compaction for long conversations
 
 mod agent_loop;
+pub mod agent_dispatcher;
 mod commands;
 pub mod compaction;
 pub mod context_monitor;
@@ -18,6 +19,8 @@ pub mod cost_guard;
 mod dispatcher;
 mod heartbeat;
 pub mod job_monitor;
+pub mod outbound;
+pub mod registry;
 mod router;
 pub mod routine;
 pub mod routine_engine;
@@ -32,7 +35,10 @@ pub mod undo;
 pub mod worker;
 
 pub(crate) use agent_loop::truncate_for_preview;
-pub use agent_loop::{Agent, AgentDeps};
+pub use agent_loop::{Agent, AgentDeps, AgentEnvelope, AgentInbox};
+pub use agent_dispatcher::{AgentDispatcher, DispatchReason, DispatchResult};
+pub use outbound::{DeliveryMode, DeliveryPlan, OutboundRouter};
+pub use registry::{AgentInstance, AgentRegistry};
 pub use compaction::{CompactionResult, ContextCompactor};
 pub use context_monitor::{CompactionStrategy, ContextBreakdown, ContextMonitor};
 pub use heartbeat::{HeartbeatConfig, HeartbeatResult, HeartbeatRunner, spawn_heartbeat};

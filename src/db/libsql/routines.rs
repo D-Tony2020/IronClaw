@@ -28,17 +28,17 @@ impl RoutineStore for LibSqlBackend {
         conn.execute(
                 r#"
                 INSERT INTO routines (
-                    id, name, description, user_id, enabled,
+                    id, name, description, user_id, agent_id, enabled,
                     trigger_type, trigger_config, action_type, action_config,
                     cooldown_secs, max_concurrent, dedup_window_secs,
                     notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention,
                     state, next_fire_at, created_at, updated_at
                 ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5,
-                    ?6, ?7, ?8, ?9,
-                    ?10, ?11, ?12,
-                    ?13, ?14, ?15, ?16, ?17,
-                    ?18, ?19, ?20, ?21
+                    ?1, ?2, ?3, ?4, ?5, ?6,
+                    ?7, ?8, ?9, ?10,
+                    ?11, ?12, ?13,
+                    ?14, ?15, ?16, ?17, ?18,
+                    ?19, ?20, ?21, ?22
                 )
                 "#,
                 params![
@@ -46,6 +46,7 @@ impl RoutineStore for LibSqlBackend {
                     routine.name.as_str(),
                     routine.description.as_str(),
                     routine.user_id.as_str(),
+                    "default",  // Iron-OpenClaw: agent_id defaults to "default" until Phase 5
                     routine.enabled as i64,
                     trigger_type,
                     trigger_config.to_string(),

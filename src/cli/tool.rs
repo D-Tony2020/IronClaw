@@ -983,14 +983,18 @@ async fn auth_tool_manual(
 
 /// Read input with hidden characters.
 fn read_hidden_input() -> anyhow::Result<String> {
-    use crossterm::{
-        event::{self, Event, KeyCode, KeyModifiers},
-        terminal,
-    };
+    use crossterm::terminal;
+
+    // When no TTY is available (e.g. piped input), fall back to reading from stdin
+    if terminal::enable_raw_mode().is_err() {
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        return Ok(input.trim().to_string());
+    }
+
+    use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
     let mut input = String::new();
-
-    terminal::enable_raw_mode()?;
 
     loop {
         if let Event::Key(key_event) = event::read()? {

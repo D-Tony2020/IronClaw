@@ -635,7 +635,127 @@ CREATE TRIGGER IF NOT EXISTS memory_chunks_fts_update AFTER UPDATE ON memory_chu
     INSERT INTO memory_chunks_fts(rowid, content) VALUES (new._rowid, new.content);
 END;
 "#,
-)];
+),
+(
+    10,
+    "multi_agent_schema",
+    // Iron-OpenClaw Phase 0: Multi-agent support tables and schema extensions.
+    //
+    // Adds:
+    //   - `agents` table: agent registry with human-readable IDs
+    //   - `agent_bindings` table: message routing rules
+    //   - `agent_id` column on `conversations` and `agent_jobs`
+    //   - `agent_id` column on `routines` (requires table recreation due to
+    //     UNIQUE constraint change from (user_id, name) to (user_id, agent_id, name))
+    //
+    // All new columns default to 'default' so existing data is preserved.
+    r#"
+-- ==================== Agent Registry ====================
+
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    description TEXT,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    workspace_prefix TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_agents_agent_id ON agents(agent_id);
+
+-- ==================== Agent Bindings (routing rules) ====================
+
+CREATE TABLE IF NOT EXISTS agent_bindings (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    channel TEXT,
+    account_id TEXT DEFAULT '*',
+    peer_id TEXT,
+    peer_type TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_bindings_agent ON agent_bindings(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_bindings_channel ON agent_bindings(channel);
+
+-- ==================== Extend existing tables ====================
+
+-- conversations: add agent_id
+ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'default';
+
+-- agent_jobs: add agent_id
+ALTER TABLE agent_jobs ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'default';
+
+-- ==================== Routines: recreation for new UNIQUE constraint ====================
+-- Cannot ALTER TABLE to change UNIQUE constraint in SQLite.
+-- Must disable FK checks during recreation to avoid cascade deletes on routine_runs.
+
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE IF NOT EXISTS routines_v10 (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    user_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT 'default',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    trigger_type TEXT NOT NULL,
+    trigger_config TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    action_config TEXT NOT NULL,
+    cooldown_secs INTEGER NOT NULL DEFAULT 300,
+    max_concurrent INTEGER NOT NULL DEFAULT 1,
+    dedup_window_secs INTEGER,
+    notify_channel TEXT,
+    notify_user TEXT NOT NULL DEFAULT 'default',
+    notify_on_success INTEGER NOT NULL DEFAULT 0,
+    notify_on_failure INTEGER NOT NULL DEFAULT 1,
+    notify_on_attention INTEGER NOT NULL DEFAULT 1,
+    state TEXT NOT NULL DEFAULT '{}',
+    last_run_at TEXT,
+    next_fire_at TEXT,
+    run_count INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, agent_id, name)
+);
+
+-- Migrate data: insert existing routines with agent_id = 'default'
+INSERT OR IGNORE INTO routines_v10 (
+    id, name, description, user_id, agent_id, enabled,
+    trigger_type, trigger_config, action_type, action_config,
+    cooldown_secs, max_concurrent, dedup_window_secs,
+    notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention,
+    state, last_run_at, next_fire_at, run_count, consecutive_failures,
+    created_at, updated_at
+)
+SELECT
+    id, name, description, user_id, 'default', enabled,
+    trigger_type, trigger_config, action_type, action_config,
+    cooldown_secs, max_concurrent, dedup_window_secs,
+    notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention,
+    state, last_run_at, next_fire_at, run_count, consecutive_failures,
+    created_at, updated_at
+FROM routines;
+
+DROP TABLE routines;
+ALTER TABLE routines_v10 RENAME TO routines;
+
+PRAGMA foreign_keys = ON;
+
+-- Recreate routine_runs FK index (it still references routines(id) which is unchanged)
+CREATE INDEX IF NOT EXISTS idx_routines_agent ON routines(agent_id);
+"#,
+),
+];
 
 /// Run incremental migrations that haven't been applied yet.
 ///

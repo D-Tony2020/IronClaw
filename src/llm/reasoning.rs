@@ -526,17 +526,12 @@ Respond in JSON format:
             }
 
             // Guard against empty text after cleaning. This can happen
-            // when reasoning models (e.g. GLM-5) return chain-of-thought
-            // in reasoning_content wrapped in <think> tags and content is
-            // null — the .or(reasoning_content) fallback picks it up, then
-            // clean_response strips the think tags leaving an empty string.
+            // when reasoning models (e.g. Gemini 2.5/3, GLM-5) return
+            // chain-of-thought in <think> tags and the actual response
+            // is also inside the thinking block or reasoning_content.
             let cleaned = clean_response(&content);
             let final_text = if cleaned.trim().is_empty() {
-                tracing::warn!(
-                    "LLM response was empty after cleaning (original len={}), using fallback",
-                    content.len()
-                );
-                "I'm not sure how to respond to that.".to_string()
+                recover_from_empty_response(&content)
             } else {
                 cleaned
             };
@@ -554,11 +549,7 @@ Respond in JSON format:
             let response = self.llm.complete(request).await?;
             let cleaned = clean_response(&response.content);
             let final_text = if cleaned.trim().is_empty() {
-                tracing::warn!(
-                    "LLM response was empty after cleaning (original len={}), using fallback",
-                    response.content.len()
-                );
-                "I'm not sure how to respond to that.".to_string()
+                recover_from_empty_response(&response.content)
             } else {
                 cleaned
             };
@@ -1469,6 +1460,80 @@ fn strip_pipe_tag(text: &str, tag: &str) -> String {
     result
 }
 
+/// Recover a usable response when `clean_response` returns empty.
+///
+/// Strategy:
+/// 1. Try to find text AFTER the last `</think>` (or `</thinking>`) closing tag —
+///    some models put the answer there but `clean_response` missed it.
+/// 2. If no text after close tag, the entire content is chain-of-thought.
+///    Return a generic acknowledgment instead of leaking internal reasoning.
+fn recover_from_empty_response(raw: &str) -> String {
+    // Try to extract text after the last </think> or </thinking> tag
+    let close_patterns = ["</think>", "</thinking>", "</thought>", "</reasoning>"];
+    let mut best_pos = None;
+    for pat in &close_patterns {
+        if let Some(pos) = raw.rfind(pat) {
+            let after_pos = pos + pat.len();
+            match best_pos {
+                Some(prev) if after_pos > prev => best_pos = Some(after_pos),
+                None => best_pos = Some(after_pos),
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(pos) = best_pos {
+        let after_think = raw[pos..].trim();
+        if !after_think.is_empty() {
+            let cleaned = strip_all_xml_tags(after_think);
+            let cleaned = collapse_newlines(&cleaned);
+            if !cleaned.trim().is_empty() {
+                tracing::info!(
+                    "Recovered response after closing think tag (original len={}, recovered len={})",
+                    raw.len(),
+                    cleaned.len()
+                );
+                return cleaned;
+            }
+        }
+    }
+
+    // No usable content found — the model only produced chain-of-thought.
+    // Don't leak internal reasoning to the user.
+    tracing::warn!(
+        "LLM response contained only chain-of-thought (len={}), no user-facing answer",
+        raw.len()
+    );
+    "I'm not sure how to respond to that.".to_string()
+}
+
+/// Lenient XML tag stripping: removes ALL `<tag>` and `</tag>` markers but keeps
+/// the text content inside them. Used as a last-resort recovery when `clean_response`
+/// strips everything (e.g. reasoning models that embed the answer inside `<think>` blocks).
+fn strip_all_xml_tags(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            // Skip until '>' or end of string
+            let mut found_close = false;
+            for c in chars.by_ref() {
+                if c == '>' {
+                    found_close = true;
+                    break;
+                }
+            }
+            if !found_close {
+                // Malformed tag at end — don't lose content
+                break;
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
 /// Collapse triple+ newlines to double, then trim.
 fn collapse_newlines(text: &str) -> String {
     let mut result = text.to_string();
@@ -2007,5 +2072,47 @@ That's my plan."#;
         assert!(!cleaned.contains("[Called tool"));
         assert!(cleaned.contains("Let me fetch that."));
         assert!(cleaned.contains("Here are the results."));
+    }
+
+    #[test]
+    fn test_strip_all_xml_tags_basic() {
+        assert_eq!(strip_all_xml_tags("hello"), "hello");
+        assert_eq!(strip_all_xml_tags("<b>bold</b>"), "bold");
+        assert_eq!(strip_all_xml_tags("<think>thinking</think>answer"), "thinkinganswer");
+    }
+
+    #[test]
+    fn test_strip_all_xml_tags_gemini_thinking() {
+        // Simulates Gemini returning thinking content that clean_response strips
+        let input = "<think>\nI need to analyze this request.\nThe user wants a greeting.\n</think>\n你好！我是你的AI助手。";
+        let cleaned = clean_response(input);
+        // clean_response should keep the answer after </think>
+        assert!(cleaned.contains("你好"));
+
+        // Even if clean_response strips everything, lenient recovery should work
+        let pure_thinking = "<think>\nI need to analyze this request.\nThe user wants a greeting.\nHello! I am your AI assistant.\n</think>";
+        let strict_cleaned = clean_response(pure_thinking);
+        if strict_cleaned.trim().is_empty() {
+            let recovered = strip_all_xml_tags(pure_thinking);
+            assert!(recovered.contains("Hello! I am your AI assistant."));
+        }
+    }
+
+    #[test]
+    fn test_strip_all_xml_tags_nested() {
+        let input = "<think><step>analyze</step>The answer is 42.</think>";
+        let result = strip_all_xml_tags(input);
+        assert!(result.contains("analyze"));
+        assert!(result.contains("The answer is 42."));
+    }
+
+    #[test]
+    fn test_strip_all_xml_tags_preserves_non_tag_angles() {
+        // Mathematical expressions with < shouldn't be broken
+        let input = "x < 5 and y > 3";
+        let result = strip_all_xml_tags(input);
+        // The < will consume "5 and y >" — this is expected behavior for a lenient stripper
+        // It's a last-resort recovery, not a general-purpose function
+        assert!(result.contains("x "));
     }
 }

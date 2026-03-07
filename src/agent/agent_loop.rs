@@ -10,6 +10,7 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::agent::context_monitor::ContextMonitor;
 use crate::agent::heartbeat::spawn_heartbeat;
@@ -30,6 +31,32 @@ use crate::safety::SafetyLayer;
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 use crate::workspace::Workspace;
+
+// ---------------------------------------------------------------------------
+// Iron-OpenClaw Phase 0.5: Actor inbox types
+// ---------------------------------------------------------------------------
+
+/// Message envelope for the Actor inbox pattern.
+///
+/// Bundles an [`IncomingMessage`] with a oneshot reply channel so the caller
+/// (channel bridge or dispatcher) can await the agent's response.
+#[derive(Debug)]
+pub struct AgentEnvelope {
+    /// The incoming message to process.
+    pub message: IncomingMessage,
+    /// Channel to send back the processing result.
+    ///
+    /// `Ok(Some(text))` = response to send,
+    /// `Ok(None)` = shutdown signal,
+    /// `Err(e)` = processing error.
+    pub reply_tx: oneshot::Sender<Result<Option<String>, Error>>,
+}
+
+/// Handle for sending messages to an Agent's inbox.
+///
+/// Clone this handle to share across dispatchers — each send will be processed
+/// serially by the Agent's inbox loop.
+pub type AgentInbox = mpsc::Sender<AgentEnvelope>;
 
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
@@ -57,6 +84,10 @@ pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
 /// Core dependencies for the agent.
 ///
 /// Bundles the shared components to reduce argument count.
+///
+/// All fields are `Arc`-wrapped or `Clone`-able, enabling cheap clones for
+/// multi-agent setups where each agent shares the same underlying services.
+#[derive(Clone)]
 pub struct AgentDeps {
     pub store: Option<Arc<dyn Database>>,
     pub llm: Arc<dyn LlmProvider>,
@@ -232,7 +263,55 @@ impl Agent {
         }
     }
 
+    // -------------------------------------------------------------------
+    // Iron-OpenClaw Phase 0.5: Actor inbox API
+    // -------------------------------------------------------------------
+
+    /// Create a new inbox channel pair.
+    ///
+    /// Returns `(sender, receiver)`. The sender is handed to dispatchers;
+    /// the receiver is passed to [`start_inbox_loop`].
+    ///
+    /// Used by `AgentRegistry` in Phase 1+ to create per-agent inboxes.
+    pub fn create_inbox() -> (AgentInbox, mpsc::Receiver<AgentEnvelope>) {
+        mpsc::channel(64)
+    }
+
+    /// Consume the inbox, processing messages serially (Actor pattern).
+    ///
+    /// Each message is handled via [`handle_message`], and the result is
+    /// sent back through the envelope's `reply_tx`. After processing, any
+    /// event-triggered routines are checked.
+    ///
+    /// This method takes `Arc<Self>` rather than consuming `self`, enabling
+    /// multi-agent setups where each agent lives behind an Arc.
+    pub async fn start_inbox_loop(
+        self: Arc<Self>,
+        mut inbox: mpsc::Receiver<AgentEnvelope>,
+        routine_engine: Option<Arc<RoutineEngine>>,
+    ) {
+        while let Some(envelope) = inbox.recv().await {
+            let result = self.handle_message(&envelope.message).await;
+            let _ = envelope.reply_tx.send(result);
+
+            // Check event-triggered routines (cheap in-memory regex match,
+            // fires async if matched). Runs after processing so the routine
+            // sees up-to-date session state.
+            if let Some(ref engine) = routine_engine {
+                let fired = engine.check_event_triggers(&envelope.message).await;
+                if fired > 0 {
+                    tracing::debug!("Fired {} event-triggered routines", fired);
+                }
+            }
+        }
+        tracing::info!("Agent inbox closed, loop exiting");
+    }
+
     /// Run the agent main loop.
+    ///
+    /// This is the backwards-compatible entry point for single-agent mode.
+    /// Internally it wraps `self` in an `Arc`, creates an inbox, and bridges
+    /// the channel stream into the inbox loop.
     pub async fn run(self) -> Result<(), Error> {
         // Start channels
         let mut message_stream = self.channels.start_all().await?;
@@ -500,8 +579,27 @@ impl Agent {
         // Extract engine ref for use in message loop
         let routine_engine_for_loop = routine_handle.as_ref().map(|(_, e)| Arc::clone(e));
 
-        // Main message loop
-        tracing::info!("Agent {} ready and listening", self.config.name);
+        // -------------------------------------------------------------------
+        // Phase 0.5: Wrap self in Arc and spawn inbox loop (Actor pattern)
+        // -------------------------------------------------------------------
+        // All auxiliary tasks above captured clones of Arc fields before this
+        // point, so `self` is free to be consumed into the Arc.
+        let agent = Arc::new(self);
+
+        // Create inbox channel pair
+        let (inbox_tx, inbox_rx) = Self::create_inbox();
+
+        // Spawn the inbox loop — processes messages serially.
+        // Event-triggered routines are checked inside the loop.
+        let inbox_agent = agent.clone();
+        let inbox_handle = tokio::spawn(async move {
+            inbox_agent
+                .start_inbox_loop(inbox_rx, routine_engine_for_loop)
+                .await;
+        });
+
+        // Main bridge loop: channels → inbox → outbound
+        tracing::info!("Agent {} ready and listening", agent.config.name);
 
         loop {
             let message = tokio::select! {
@@ -521,7 +619,29 @@ impl Agent {
                 }
             };
 
-            match self.handle_message(&message).await {
+            // Bridge: wrap message in envelope, send to inbox, await reply
+            let (reply_tx, reply_rx) = oneshot::channel();
+            let envelope = AgentEnvelope {
+                message: message.clone(),
+                reply_tx,
+            };
+
+            if inbox_tx.send(envelope).await.is_err() {
+                tracing::error!("Agent inbox closed unexpectedly, shutting down");
+                break;
+            }
+
+            // Await the Agent's reply from the inbox loop
+            let result = match reply_rx.await {
+                Ok(r) => r,
+                Err(_) => {
+                    tracing::error!("Agent inbox dropped reply channel");
+                    continue;
+                }
+            };
+
+            // Handle outbound: hooks → channel respond → error reporting
+            match result {
                 Ok(Some(response)) if !response.is_empty() => {
                     // Hook: BeforeOutbound — allow hooks to modify or suppress outbound
                     let event = crate::hooks::HookEvent::Outbound {
@@ -530,14 +650,14 @@ impl Agent {
                         content: response.clone(),
                         thread_id: message.thread_id.clone(),
                     };
-                    match self.hooks().run(&event).await {
+                    match agent.hooks().run(&event).await {
                         Err(err) => {
                             tracing::warn!("BeforeOutbound hook blocked response: {}", err);
                         }
                         Ok(crate::hooks::HookOutcome::Continue {
                             modified: Some(new_content),
                         }) => {
-                            if let Err(e) = self
+                            if let Err(e) = agent
                                 .channels
                                 .respond(&message, OutgoingResponse::text(new_content))
                                 .await
@@ -550,7 +670,7 @@ impl Agent {
                             }
                         }
                         _ => {
-                            if let Err(e) = self
+                            if let Err(e) = agent
                                 .channels
                                 .respond(&message, OutgoingResponse::text(response))
                                 .await
@@ -580,7 +700,7 @@ impl Agent {
                 }
                 Err(e) => {
                     tracing::error!("Error handling message: {}", e);
-                    if let Err(send_err) = self
+                    if let Err(send_err) = agent
                         .channels
                         .respond(&message, OutgoingResponse::text(format!("Error: {}", e)))
                         .await
@@ -594,17 +714,14 @@ impl Agent {
                 }
             }
 
-            // Check event triggers (cheap in-memory regex, fires async if matched)
-            if let Some(ref engine) = routine_engine_for_loop {
-                let fired = engine.check_event_triggers(&message).await;
-                if fired > 0 {
-                    tracing::debug!("Fired {} event-triggered routines", fired);
-                }
-            }
+            // Event triggers are handled inside start_inbox_loop (Phase 0.5)
         }
 
         // Cleanup
         tracing::info!("Agent shutting down...");
+        // Drop inbox sender to signal the inbox loop to exit gracefully
+        drop(inbox_tx);
+        inbox_handle.abort();
         repair_handle.abort();
         pruning_handle.abort();
         if let Some(handle) = heartbeat_handle {
@@ -613,8 +730,8 @@ impl Agent {
         if let Some((cron_handle, _)) = routine_handle {
             cron_handle.abort();
         }
-        self.scheduler.stop_all().await;
-        self.channels.shutdown_all().await?;
+        agent.scheduler.stop_all().await;
+        agent.channels.shutdown_all().await?;
 
         Ok(())
     }

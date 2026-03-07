@@ -16,8 +16,8 @@ use crate::agent::routine::{Routine, RoutineRun, RunStatus};
 use crate::config::DatabaseConfig;
 use crate::context::{ActionRecord, JobContext, JobState};
 use crate::db::{
-    ConversationStore, Database, JobStore, RoutineStore, SandboxStore, SettingsStore,
-    ToolFailureStore, WorkspaceStore,
+    AgentBindingRecord, AgentRecord, AgentStore, ConversationStore, Database, JobStore,
+    RoutineStore, SandboxStore, SettingsStore, ToolFailureStore, WorkspaceStore,
 };
 use crate::error::{DatabaseError, WorkspaceError};
 use crate::history::{
@@ -547,6 +547,74 @@ impl SettingsStore for PgBackend {
 
     async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
         self.store.has_settings(user_id).await
+    }
+}
+
+// ==================== AgentStore ====================
+
+#[async_trait]
+impl AgentStore for PgBackend {
+    async fn create_agent(&self, _agent: &AgentRecord) -> Result<(), DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn get_agent(&self, _agent_id: &str) -> Result<Option<AgentRecord>, DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn list_agents(&self) -> Result<Vec<AgentRecord>, DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn update_agent(&self, _agent: &AgentRecord) -> Result<(), DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn delete_agent(&self, _agent_id: &str) -> Result<(), DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn get_default_agent(&self) -> Result<Option<AgentRecord>, DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn create_binding(&self, _binding: &AgentBindingRecord) -> Result<(), DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn list_bindings(
+        &self,
+        _agent_id: &str,
+    ) -> Result<Vec<AgentBindingRecord>, DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn list_all_bindings(&self) -> Result<Vec<AgentBindingRecord>, DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
+    }
+
+    async fn delete_binding(&self, _id: &str) -> Result<(), DatabaseError> {
+        Err(DatabaseError::Query(
+            "AgentStore not yet implemented for PostgreSQL backend".to_string(),
+        ))
     }
 }
 

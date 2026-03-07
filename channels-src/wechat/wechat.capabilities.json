@@ -1,0 +1,67 @@
+{
+  "version": "0.1.0",
+  "wit_version": "0.2.0",
+  "type": "channel",
+  "name": "wechat",
+  "description": "WeChat Official Account channel via Customer Service Message API",
+  "setup": {
+    "required_secrets": [
+      {
+        "name": "wechat_app_id",
+        "prompt": "Enter your WeChat Official Account AppID",
+        "optional": false
+      },
+      {
+        "name": "wechat_app_secret",
+        "prompt": "Enter your WeChat Official Account AppSecret",
+        "optional": false
+      },
+      {
+        "name": "wechat_verify_token",
+        "prompt": "Enter your WeChat webhook verification token",
+        "optional": false
+      }
+    ]
+  },
+  "capabilities": {
+    "http": {
+      "allowlist": [
+        { "host": "api.weixin.qq.com", "path_prefix": "/" }
+      ],
+      "credentials": {
+        "wechat_appid": {
+          "secret_name": "wechat_app_id",
+          "location": { "type": "url_path", "placeholder": "{WECHAT_APP_ID}" },
+          "host_patterns": ["api.weixin.qq.com"]
+        },
+        "wechat_secret": {
+          "secret_name": "wechat_app_secret",
+          "location": { "type": "url_path", "placeholder": "{WECHAT_APP_SECRET}" },
+          "host_patterns": ["api.weixin.qq.com"]
+        }
+      },
+      "rate_limit": {
+        "requests_per_minute": 60,
+        "requests_per_hour": 2000
+      }
+    },
+    "secrets": {
+      "allowed_names": ["wechat_*"]
+    },
+    "channel": {
+      "allowed_paths": ["/webhook/wechat"],
+      "allow_polling": false,
+      "workspace_prefix": "channels/wechat/",
+      "emit_rate_limit": {
+        "messages_per_minute": 100,
+        "messages_per_hour": 5000
+      }
+    }
+  },
+  "config": {
+    "verify_token": "xhtznb2026",
+    "owner_id": "oaMMC3M3sdoBi81_Gd41EwamZaBc",
+    "dm_policy": "open",
+    "allow_from": []
+  }
+}

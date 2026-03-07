@@ -3,7 +3,7 @@ use crate::error::ConfigError;
 use crate::settings::Settings;
 
 /// Heartbeat configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HeartbeatConfig {
     /// Whether heartbeat is enabled.
     pub enabled: bool,

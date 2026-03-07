@@ -6,6 +6,7 @@
 //! table, or auto-detection.
 
 mod agent;
+pub mod agents;
 mod builder;
 mod channels;
 mod database;
@@ -30,6 +31,7 @@ use crate::settings::Settings;
 
 // Re-export all public types so `crate::config::FooConfig` continues to work.
 pub use self::agent::AgentConfig;
+pub use self::agents::{AgentDefinition, AgentInstanceConfig, AgentsConfig, DmScope};
 pub use self::builder::BuilderModeConfig;
 pub use self::channels::{ChannelsConfig, CliConfig, GatewayConfig, HttpConfig, SignalConfig};
 pub use self::database::{DatabaseBackend, DatabaseConfig, SslMode, default_libsql_path};
@@ -64,6 +66,8 @@ pub struct Config {
     pub tunnel: TunnelConfig,
     pub channels: ChannelsConfig,
     pub agent: AgentConfig,
+    /// Multi-agent definitions. Defaults to a single "main" agent.
+    pub agents: AgentsConfig,
     pub safety: SafetyConfig,
     pub wasm: WasmConfig,
     pub secrets: SecretsConfig,
@@ -115,6 +119,7 @@ impl Config {
                 wasm_channel_owner_ids: HashMap::new(),
             },
             agent: AgentConfig::for_testing(),
+            agents: AgentsConfig::default(),
             safety: SafetyConfig {
                 max_output_length: 100_000,
                 injection_check_enabled: false,
@@ -259,6 +264,7 @@ impl Config {
             tunnel: TunnelConfig::resolve(settings)?,
             channels: ChannelsConfig::resolve(settings)?,
             agent: AgentConfig::resolve(settings)?,
+            agents: AgentsConfig::default(), // TODO: parse from TOML [[agents.list]]
             safety: SafetyConfig::resolve()?,
             wasm: WasmConfig::resolve()?,
             secrets: SecretsConfig::resolve().await?,

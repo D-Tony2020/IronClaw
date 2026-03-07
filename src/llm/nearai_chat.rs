@@ -544,6 +544,13 @@ impl LlmProvider for NearAiChatProvider {
         // content: null + reasoning_content filled with chain-of-thought;
         // leaking that into conversation history inflates context and
         // confuses the model.
+        tracing::debug!(
+            content_len = choice.message.content.as_ref().map(|s| s.len()),
+            reasoning_len = choice.message.reasoning_content.as_ref().map(|s| s.len()),
+            content_preview = choice.message.content.as_ref().map(|s| &s[..s.len().min(200)]),
+            tool_call_count = tool_calls.len(),
+            "LLM response fields"
+        );
         let content = if tool_calls.is_empty() {
             choice.message.content.or(choice.message.reasoning_content)
         } else {

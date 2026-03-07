@@ -6,6 +6,7 @@
 //! - Turso cloud with embedded replica (sync to cloud)
 //! - In-memory (for testing)
 
+mod agents;
 mod conversations;
 mod jobs;
 mod routines;
@@ -33,8 +34,11 @@ use crate::workspace::MemoryDocument;
 use crate::db::libsql_migrations;
 
 /// Explicit column list for routines table (matches positional access in `row_to_routine_libsql`).
+///
+/// Iron-OpenClaw: `agent_id` added at position 4 (after user_id). All
+/// subsequent indices in `row_to_routine_libsql` are shifted +1.
 pub(crate) const ROUTINE_COLUMNS: &str = "\
-    id, name, description, user_id, enabled, \
+    id, name, description, user_id, agent_id, enabled, \
     trigger_type, trigger_config, action_type, action_config, \
     cooldown_secs, max_concurrent, dedup_window_secs, \
     notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention, \
@@ -314,13 +318,16 @@ pub(crate) fn row_to_memory_document(row: &libsql::Row) -> MemoryDocument {
 }
 
 pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, DatabaseError> {
-    let trigger_type = get_text(row, 5);
-    let trigger_config = get_json(row, 6);
-    let action_type = get_text(row, 7);
-    let action_config = get_json(row, 8);
-    let cooldown_secs = get_i64(row, 9);
-    let max_concurrent = get_i64(row, 10);
-    let dedup_window_secs: Option<i64> = row.get::<i64>(11).ok();
+    // Iron-OpenClaw: agent_id is at index 4; all subsequent indices shifted +1
+    // Index 4 (agent_id) is read but not stored in Routine struct yet (Phase 5 will add it).
+    let _agent_id = get_text(row, 4); // agent_id — reserved for Phase 5
+    let trigger_type = get_text(row, 6);
+    let trigger_config = get_json(row, 7);
+    let action_type = get_text(row, 8);
+    let action_config = get_json(row, 9);
+    let cooldown_secs = get_i64(row, 10);
+    let max_concurrent = get_i64(row, 11);
+    let dedup_window_secs: Option<i64> = row.get::<i64>(12).ok();
 
     let trigger = Trigger::from_db(&trigger_type, trigger_config)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
@@ -332,7 +339,7 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
         name: get_text(row, 1),
         description: get_text(row, 2),
         user_id: get_text(row, 3),
-        enabled: get_i64(row, 4) != 0,
+        enabled: get_i64(row, 5) != 0,
         trigger,
         action,
         guardrails: RoutineGuardrails {
@@ -341,19 +348,19 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
             dedup_window: dedup_window_secs.map(|s| std::time::Duration::from_secs(s as u64)),
         },
         notify: NotifyConfig {
-            channel: get_opt_text(row, 12),
-            user: get_text(row, 13),
-            on_success: get_i64(row, 14) != 0,
-            on_failure: get_i64(row, 15) != 0,
-            on_attention: get_i64(row, 16) != 0,
+            channel: get_opt_text(row, 13),
+            user: get_text(row, 14),
+            on_success: get_i64(row, 15) != 0,
+            on_failure: get_i64(row, 16) != 0,
+            on_attention: get_i64(row, 17) != 0,
         },
-        state: get_json(row, 17),
-        last_run_at: get_opt_ts(row, 18),
-        next_fire_at: get_opt_ts(row, 19),
-        run_count: get_i64(row, 20) as u64,
-        consecutive_failures: get_i64(row, 21) as u32,
-        created_at: get_ts(row, 22),
-        updated_at: get_ts(row, 23),
+        state: get_json(row, 18),
+        last_run_at: get_opt_ts(row, 19),
+        next_fire_at: get_opt_ts(row, 20),
+        run_count: get_i64(row, 21) as u64,
+        consecutive_failures: get_i64(row, 22) as u32,
+        created_at: get_ts(row, 23),
+        updated_at: get_ts(row, 24),
     })
 }
 

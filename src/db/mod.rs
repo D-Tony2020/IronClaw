@@ -401,6 +401,96 @@ pub trait WorkspaceStore: Send + Sync {
     ) -> Result<Vec<SearchResult>, WorkspaceError>;
 }
 
+// ==================== Agent Store (Iron-OpenClaw Phase 0) ====================
+
+/// Record representing a registered agent.
+#[derive(Debug, Clone)]
+pub struct AgentRecord {
+    /// Internal UUID primary key.
+    pub id: Uuid,
+    /// Human-readable agent identifier (e.g. "main", "newsbot", "tutor").
+    pub agent_id: String,
+    /// Display name shown in UI.
+    pub display_name: Option<String>,
+    /// Description of the agent's purpose.
+    pub description: Option<String>,
+    /// Whether this is the default agent for unmatched messages.
+    pub is_default: bool,
+    /// Whether the agent is enabled.
+    pub enabled: bool,
+    /// JSON-encoded runtime configuration overrides.
+    pub config_json: String,
+    /// Workspace path prefix for file isolation (e.g. "agents/newsbot/").
+    pub workspace_prefix: Option<String>,
+    /// When the record was created.
+    pub created_at: DateTime<Utc>,
+    /// When the record was last updated.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Record representing an agent routing binding.
+#[derive(Debug, Clone)]
+pub struct AgentBindingRecord {
+    /// Internal UUID primary key.
+    pub id: Uuid,
+    /// Target agent_id (references agents.agent_id).
+    pub agent_id: String,
+    /// Channel name filter (e.g. "wechat", "telegram", or "*" for any).
+    pub channel: Option<String>,
+    /// Account ID filter within the channel (default "*" for any).
+    pub account_id: String,
+    /// Exact peer ID to match (user or group ID).
+    pub peer_id: Option<String>,
+    /// Peer type filter: "dm", "group", or None for any.
+    pub peer_type: Option<String>,
+    /// Priority for binding match ordering (higher = matched first).
+    pub priority: i32,
+    /// Whether this binding is active.
+    pub enabled: bool,
+    /// When the binding was created.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Persistence operations for agent registration and routing bindings.
+///
+/// Iron-OpenClaw Phase 0: Provides CRUD for the `agents` and `agent_bindings`
+/// tables that power multi-agent routing.
+#[async_trait]
+pub trait AgentStore: Send + Sync {
+    /// Create a new agent record.
+    async fn create_agent(&self, agent: &AgentRecord) -> Result<(), DatabaseError>;
+
+    /// Get an agent by its human-readable ID.
+    async fn get_agent(&self, agent_id: &str) -> Result<Option<AgentRecord>, DatabaseError>;
+
+    /// List all registered agents.
+    async fn list_agents(&self) -> Result<Vec<AgentRecord>, DatabaseError>;
+
+    /// Update an existing agent record (matched by agent_id).
+    async fn update_agent(&self, agent: &AgentRecord) -> Result<(), DatabaseError>;
+
+    /// Delete an agent by its human-readable ID.
+    async fn delete_agent(&self, agent_id: &str) -> Result<(), DatabaseError>;
+
+    /// Get the default agent (is_default = 1).
+    async fn get_default_agent(&self) -> Result<Option<AgentRecord>, DatabaseError>;
+
+    /// Create a routing binding for an agent.
+    async fn create_binding(&self, binding: &AgentBindingRecord) -> Result<(), DatabaseError>;
+
+    /// List all bindings for a specific agent.
+    async fn list_bindings(
+        &self,
+        agent_id: &str,
+    ) -> Result<Vec<AgentBindingRecord>, DatabaseError>;
+
+    /// List all bindings across all agents (for routing cache).
+    async fn list_all_bindings(&self) -> Result<Vec<AgentBindingRecord>, DatabaseError>;
+
+    /// Delete a binding by its ID.
+    async fn delete_binding(&self, id: &str) -> Result<(), DatabaseError>;
+}
+
 /// Backend-agnostic database supertrait.
 ///
 /// Combines all sub-traits into one. Existing `Arc<dyn Database>` consumers
@@ -414,6 +504,7 @@ pub trait Database:
     + ToolFailureStore
     + SettingsStore
     + WorkspaceStore
+    + AgentStore
     + Send
     + Sync
 {
