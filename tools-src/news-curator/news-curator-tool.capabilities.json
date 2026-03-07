@@ -1,0 +1,44 @@
+{
+  "version": "0.1.0",
+  "wit_version": "0.2.0",
+  "capabilities": {
+    "http": {
+      "allowlist": [
+        { "host": "openai.com", "methods": ["GET"] },
+        { "host": "raw.githubusercontent.com", "methods": ["GET"] },
+        { "host": "deepmind.google", "methods": ["GET"] },
+        { "host": "research.google", "methods": ["GET"] },
+        { "host": "research.facebook.com", "methods": ["GET"] },
+        { "host": "qwenlm.github.io", "methods": ["GET"] },
+        { "host": "www.jiqizhixin.com", "methods": ["GET"] },
+        { "host": "techcrunch.com", "methods": ["GET"] },
+        { "host": "www.theverge.com", "methods": ["GET"] },
+        { "host": "arstechnica.com", "methods": ["GET"] },
+        { "host": "www.technologyreview.com", "methods": ["GET"] },
+        { "host": "www.qbitai.com", "methods": ["GET"] },
+        { "host": "36kr.com", "methods": ["GET"] },
+        { "host": "spectrum.ieee.org", "methods": ["GET"] },
+        { "host": "www.therobotreport.com", "methods": ["GET"] },
+        { "host": "developer.nvidia.com", "methods": ["GET"] },
+        { "host": "www.apple.com", "methods": ["GET"] },
+        { "host": "www.tomshardware.com", "methods": ["GET"] },
+        { "host": "papers.takara.ai", "methods": ["GET"] },
+        { "host": "zernel.github.io", "methods": ["GET"] },
+        { "host": "importai.substack.com", "methods": ["GET"] },
+        { "host": "chinai.substack.com", "methods": ["GET"] },
+        { "host": "hnrss.org", "methods": ["GET"] },
+        { "host": "www.reddit.com", "methods": ["GET"] },
+        { "host": "mshibanami.github.io", "methods": ["GET"] },
+        { "host": "huggingface.co", "methods": ["GET"] },
+        { "host": "hacker-news.firebaseio.com", "methods": ["GET"] },
+        { "host": "news.ycombinator.com", "methods": ["GET"] }
+      ],
+      "rate_limit": {
+        "requests_per_minute": 60,
+        "requests_per_hour": 500
+      }
+    }
+  },
+  "auth": null,
+  "setup": null
+}
