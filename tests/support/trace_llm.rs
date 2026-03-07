@@ -568,6 +568,7 @@ impl LlmProvider for TraceLlm {
                         id: tc.id,
                         name: tc.name,
                         arguments: tc.arguments,
+                        extra: Default::default(),
                     })
                     .collect();
                 Ok(ToolCompletionResponse {

@@ -179,6 +179,12 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: serde_json::Value,
+    /// Provider-specific extra fields (e.g. Gemini's `thought_signature`).
+    /// Preserved as pass-through to avoid breaking the conversation when
+    /// sending tool results back to the LLM.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Result of a tool execution to send back to the LLM.
@@ -392,6 +398,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "echo".to_string(),
             arguments: serde_json::json!({}),
+            extra: Default::default(),
         };
         let mut messages = vec![
             ChatMessage::user("hello"),
@@ -435,6 +442,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "echo".to_string(),
             arguments: serde_json::json!({}),
+            extra: Default::default(),
         };
         let mut messages = vec![
             ChatMessage::user("test"),

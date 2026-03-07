@@ -333,6 +333,7 @@ fn extract_response(
                     id: tc.id.clone(),
                     name: tc.function.name.clone(),
                     arguments: tc.function.arguments.clone(),
+                    extra: Default::default(),
                 });
             }
             // Reasoning and Image variants are not mapped to IronClaw types
@@ -608,6 +609,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "search".to_string(),
             arguments: serde_json::json!({"query": "test"}),
+            extra: Default::default(),
         };
         let msg = ChatMessage::assistant_with_tool_calls(Some("thinking".to_string()), vec![tc]);
         let messages = vec![msg];
@@ -717,6 +719,7 @@ mod tests {
             id: "".to_string(),
             name: "search".to_string(),
             arguments: serde_json::json!({"query": "test"}),
+            extra: Default::default(),
         };
         let messages = vec![ChatMessage::assistant_with_tool_calls(None, vec![tc])];
         let (_preamble, history) = convert_messages(&messages);
@@ -746,6 +749,7 @@ mod tests {
             id: "   ".to_string(),
             name: "search".to_string(),
             arguments: serde_json::json!({"query": "test"}),
+            extra: Default::default(),
         };
         let messages = vec![ChatMessage::assistant_with_tool_calls(None, vec![tc])];
         let (_preamble, history) = convert_messages(&messages);
@@ -776,6 +780,7 @@ mod tests {
             id: "".to_string(),
             name: "search".to_string(),
             arguments: serde_json::json!({"query": "test"}),
+            extra: Default::default(),
         };
         let assistant_msg = ChatMessage::assistant_with_tool_calls(None, vec![tc]);
         let tool_result_msg = ChatMessage {

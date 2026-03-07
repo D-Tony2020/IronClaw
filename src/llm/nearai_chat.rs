@@ -534,6 +534,7 @@ impl LlmProvider for NearAiChatProvider {
                     id: tc.id,
                     name: tc.function.name,
                     arguments,
+                    extra: tc.extra,
                 }
             })
             .collect();
@@ -871,6 +872,7 @@ impl From<ChatMessage> for ChatCompletionMessage {
                         name: tc.name,
                         arguments: tc.arguments.to_string(),
                     },
+                    extra: tc.extra,
                 })
                 .collect()
         });
@@ -942,6 +944,10 @@ struct ChatCompletionToolCall {
     #[allow(dead_code)]
     call_type: String,
     function: ChatCompletionToolCallFunction,
+    /// Provider-specific extra fields (e.g. Gemini's `thought_signature`).
+    /// Captured on deserialization, passed through on serialization.
+    #[serde(flatten)]
+    extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1066,11 +1072,13 @@ mod tests {
                 id: "call_1".to_string(),
                 name: "list_issues".to_string(),
                 arguments: serde_json::json!({"owner": "foo", "repo": "bar"}),
+                extra: Default::default(),
             },
             ToolCall {
                 id: "call_2".to_string(),
                 name: "search".to_string(),
                 arguments: serde_json::json!({"query": "test"}),
+                extra: Default::default(),
             },
         ];
 
@@ -1103,6 +1111,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "test".to_string(),
             arguments: serde_json::json!({"key": "value"}),
+            extra: Default::default(),
         };
         let msg = ChatMessage::assistant_with_tool_calls(None, vec![tc]);
         let chat_msg: ChatCompletionMessage = msg.into();
@@ -1160,6 +1169,7 @@ mod tests {
                         name: "echo".to_string(),
                         arguments: r#"{"message":"hi"}"#.to_string(),
                     },
+                    extra: Default::default(),
                 }]),
             },
             ChatCompletionMessage {
@@ -1212,6 +1222,7 @@ mod tests {
                         name: "search".to_string(),
                         arguments: r#"{"q":"test"}"#.to_string(),
                     },
+                    extra: Default::default(),
                 }]),
             },
             ChatCompletionMessage {
@@ -1340,6 +1351,7 @@ mod tests {
                     id: tc.id,
                     name: tc.function.name,
                     arguments,
+                    extra: tc.extra,
                 }
             })
             .collect();
@@ -1389,6 +1401,7 @@ mod tests {
                     id: tc.id,
                     name: tc.function.name,
                     arguments,
+                    extra: tc.extra,
                 }
             })
             .collect();
