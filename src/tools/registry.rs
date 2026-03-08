@@ -18,10 +18,10 @@ use crate::tools::builder::{BuildSoftwareTool, BuilderConfig, LlmSoftwareBuilder
 use crate::tools::builtin::{
     ApplyPatchTool, CancelJobTool, CreateJobTool, EchoTool, ExtensionInfoTool, HttpTool,
     JobEventsTool, JobPromptTool, JobStatusTool, JsonTool, ListDirTool, ListJobsTool,
-    MemoryReadTool, MemorySearchTool, MemoryTreeTool, MemoryWriteTool, PromptQueue, ReadFileTool,
-    ShellTool, SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool, TimeTool,
-    ToolActivateTool, ToolAuthTool, ToolInstallTool, ToolListTool, ToolRemoveTool, ToolSearchTool,
-    WriteFileTool,
+    MemoryReadTool, MemorySearchTool, MemoryTreeTool, MemoryWriteTool, NewsCuratorTool,
+    PromptQueue, ReadFileTool, ShellTool, SkillInstallTool, SkillListTool, SkillRemoveTool,
+    SkillSearchTool, TimeTool, ToolActivateTool, ToolAuthTool, ToolInstallTool, ToolListTool,
+    ToolRemoveTool, ToolSearchTool, WriteFileTool,
 };
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::{Tool, ToolDomain};
@@ -71,6 +71,7 @@ const PROTECTED_TOOL_NAMES: &[&str] = &[
     "message",
     "web_fetch",
     "restart",
+    "news_curator",
 ];
 
 /// Registry of available tools.
@@ -237,6 +238,9 @@ impl ToolRegistry {
             http = http.with_credentials(Arc::clone(cr), Arc::clone(ss));
         }
         self.register_sync(Arc::new(http));
+
+        // News curator (native, replaces WASM version)
+        self.register_sync(Arc::new(NewsCuratorTool::new()));
 
         tracing::info!("Registered {} built-in tools", self.count());
     }

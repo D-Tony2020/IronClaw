@@ -14,6 +14,7 @@ pub mod routine;
 pub mod secrets_tools;
 pub(crate) mod shell;
 pub mod skill_tools;
+mod news_curator;
 mod time;
 
 pub use echo::EchoTool;
@@ -30,6 +31,7 @@ pub use job::{
 pub use json::JsonTool;
 pub use memory::{MemoryReadTool, MemorySearchTool, MemoryTreeTool, MemoryWriteTool};
 pub use message::MessageTool;
+pub use news_curator::NewsCuratorTool;
 pub use restart::RestartTool;
 pub use routine::{
     RoutineCreateTool, RoutineDeleteTool, RoutineHistoryTool, RoutineListTool, RoutineUpdateTool,
