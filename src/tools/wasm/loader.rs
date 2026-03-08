@@ -123,8 +123,8 @@ impl WasmToolLoader {
         }
         let wasm_bytes = fs::read(wasm_path).await?;
 
-        // Read capabilities (optional) and extract OAuth refresh config
-        let (capabilities, oauth_refresh) = if let Some(cap_path) = capabilities_path {
+        // Read capabilities (optional) and extract OAuth refresh config + resource limits
+        let (capabilities, oauth_refresh, resources) = if let Some(cap_path) = capabilities_path {
             if cap_path.exists() {
                 let cap_bytes = fs::read(cap_path).await?;
                 let cap_file = CapabilitiesFile::from_bytes(&cap_bytes)
@@ -140,17 +140,44 @@ impl WasmToolLoader {
 
                 let caps = cap_file.to_capabilities();
                 let oauth = resolve_oauth_refresh_config(&cap_file);
-                (caps, oauth)
+                let resources = cap_file.resources.clone();
+                (caps, oauth, resources)
             } else {
                 tracing::warn!(
                     path = %cap_path.display(),
                     "Capabilities file not found, using default (no permissions)"
                 );
-                (Capabilities::default(), None)
+                (Capabilities::default(), None, None)
             }
         } else {
-            (Capabilities::default(), None)
+            (Capabilities::default(), None, None)
         };
+
+        // Build resource limits from capabilities file (if specified).
+        let limits = resources.as_ref().map(|res| {
+            use crate::tools::wasm::limits::{
+                DEFAULT_FUEL_LIMIT, DEFAULT_MEMORY_LIMIT, DEFAULT_TIMEOUT, ResourceLimits,
+            };
+            let rl = ResourceLimits {
+                memory_bytes: res
+                    .memory_mb
+                    .map(|mb| (mb as u64) * 1024 * 1024)
+                    .unwrap_or(DEFAULT_MEMORY_LIMIT),
+                fuel: res.fuel.unwrap_or(DEFAULT_FUEL_LIMIT),
+                timeout: res
+                    .timeout_secs
+                    .map(std::time::Duration::from_secs)
+                    .unwrap_or(DEFAULT_TIMEOUT),
+            };
+            tracing::info!(
+                tool = name,
+                memory_mb = res.memory_mb,
+                fuel = res.fuel,
+                timeout_secs = res.timeout_secs,
+                "Custom resource limits loaded from capabilities"
+            );
+            rl
+        });
 
         // Register the tool
         self.registry
@@ -159,7 +186,7 @@ impl WasmToolLoader {
                 wasm_bytes: &wasm_bytes,
                 runtime: &self.runtime,
                 capabilities,
-                limits: None,
+                limits,
                 description: None,
                 schema: None,
                 secrets_store: self.secrets_store.clone(),

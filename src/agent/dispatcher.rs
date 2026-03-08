@@ -699,16 +699,23 @@ impl Agent {
 
                                 // Sanitize and add tool result to context
                                 let result_content = match tool_result {
-                                    Ok(output) => {
+                                    Ok(ref output) => {
                                         let sanitized =
-                                            self.safety().sanitize_tool_output(&tc.name, &output);
+                                            self.safety().sanitize_tool_output(&tc.name, output);
                                         self.safety().wrap_for_llm(
                                             &tc.name,
                                             &sanitized.content,
                                             sanitized.was_modified,
                                         )
                                     }
-                                    Err(e) => format!("Error: {}", e),
+                                    Err(ref e) => {
+                                        tracing::warn!(
+                                            tool = %tc.name,
+                                            error = %e,
+                                            "Tool execution failed"
+                                        );
+                                        format!("Error: {}", e)
+                                    }
                                 };
 
                                 context_messages.push(ChatMessage::tool_result(

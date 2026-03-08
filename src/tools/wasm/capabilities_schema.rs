@@ -75,6 +75,13 @@ pub struct CapabilitiesFile {
     #[serde(default)]
     pub setup: Option<ToolSetupSchema>,
 
+    /// Resource limits for the WASM sandbox.
+    ///
+    /// Override the default resource limits (10 MB memory, 10M fuel, 60s timeout)
+    /// for tools that need more resources (e.g., tools making many HTTP requests).
+    #[serde(default)]
+    pub resources: Option<ResourcesSchema>,
+
     /// Nested capabilities wrapper for channel-level JSON compatibility.
     ///
     /// Channel capabilities files nest tool capabilities under a `"capabilities"` key.
@@ -83,6 +90,20 @@ pub struct CapabilitiesFile {
     /// Always `None` after construction via the public parse methods.
     #[serde(default, skip_serializing)]
     pub capabilities: Option<Box<CapabilitiesFile>>,
+}
+
+/// Resource limits for the WASM sandbox.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourcesSchema {
+    /// Maximum memory in megabytes (default: 10).
+    #[serde(default)]
+    pub memory_mb: Option<u32>,
+    /// Maximum fuel (instruction count, default: 10_000_000).
+    #[serde(default)]
+    pub fuel: Option<u64>,
+    /// Execution timeout in seconds (default: 60).
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 impl CapabilitiesFile {
@@ -109,6 +130,7 @@ impl CapabilitiesFile {
             self.workspace = self.workspace.or(inner.workspace);
             self.auth = self.auth.or(inner.auth);
             self.setup = self.setup.or(inner.setup);
+            self.resources = self.resources.or(inner.resources);
         }
         self
     }

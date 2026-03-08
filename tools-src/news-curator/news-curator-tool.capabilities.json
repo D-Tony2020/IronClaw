@@ -39,6 +39,11 @@
       }
     }
   },
+  "resources": {
+    "memory_mb": 256,
+    "fuel": 1000000000,
+    "timeout_secs": 300
+  },
   "auth": null,
   "setup": null
 }
