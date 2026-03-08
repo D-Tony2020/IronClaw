@@ -18,8 +18,8 @@ use ironclaw::{
         web::log_layer::LogBroadcaster,
     },
     cli::{
-        Cli, Command, run_mcp_command, run_pairing_command, run_service_command,
-        run_status_command, run_tool_command,
+        Cli, Command, run_build_command, run_mcp_command, run_pairing_command,
+        run_service_command, run_status_command, run_tool_command,
     },
     config::Config,
     hooks::bootstrap_hooks,
@@ -84,6 +84,10 @@ async fn async_main() -> anyhow::Result<()> {
         Some(Command::Pairing(pairing_cmd)) => {
             init_cli_tracing();
             return run_pairing_command(pairing_cmd.clone()).map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        Some(Command::Build(build_cmd)) => {
+            init_cli_tracing();
+            return run_build_command(build_cmd.clone()).await;
         }
         Some(Command::Service(service_cmd)) => {
             init_cli_tracing();

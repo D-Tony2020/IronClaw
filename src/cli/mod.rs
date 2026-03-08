@@ -11,6 +11,7 @@
 //! - Active health diagnostics (`doctor`)
 //! - Checking system health (`status`)
 
+mod build;
 mod completion;
 mod config;
 mod doctor;
@@ -23,6 +24,7 @@ mod service;
 pub mod status;
 mod tool;
 
+pub use build::{BuildCommand, run_build_command};
 pub use completion::Completion;
 pub use config::{ConfigCommand, run_config_command};
 pub use doctor::run_doctor_command;
@@ -145,6 +147,14 @@ pub enum Command {
         long_about = "Approve or manage pairing requests.\nExamples:\n  ironclaw pairing list telegram\n  ironclaw pairing approve telegram ABC12345"
     )]
     Pairing(PairingCommand),
+
+    /// Build software from natural language descriptions
+    #[command(
+        subcommand,
+        about = "Build software with LLM",
+        long_about = "Build WASM tools, CLI binaries, scripts using LLM-driven code generation.\nExample: ironclaw build new 'A tool that fetches weather data'"
+    )]
+    Build(BuildCommand),
 
     /// Manage OS service (launchd / systemd)
     #[command(

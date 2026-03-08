@@ -15,6 +15,7 @@ Commands:
   mcp         Manage MCP servers
   memory      Manage workspace memory
   pairing     Manage DM pairing
+  build       Build software with LLM
   service     Manage OS service
   doctor      Run diagnostics
   status      Show system status

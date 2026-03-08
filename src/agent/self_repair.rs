@@ -95,7 +95,6 @@ impl DefaultSelfRepair {
     }
 
     /// Add a Store for tool failure tracking.
-    #[allow(dead_code)] // TODO: wire up in main.rs when persistence is needed
     pub(crate) fn with_store(mut self, store: Arc<dyn Database>) -> Self {
         self.store = Some(store);
         self

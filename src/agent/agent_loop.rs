@@ -317,11 +317,18 @@ impl Agent {
         let mut message_stream = self.channels.start_all().await?;
 
         // Start self-repair task with notification forwarding
-        let repair = Arc::new(DefaultSelfRepair::new(
-            self.context_manager.clone(),
-            self.config.stuck_threshold,
-            self.config.max_repair_attempts,
-        ));
+        let repair = {
+            let mut r = DefaultSelfRepair::new(
+                self.context_manager.clone(),
+                self.config.stuck_threshold,
+                self.config.max_repair_attempts,
+            );
+            // Wire database store for broken tool detection & repair tracking
+            if let Some(ref store) = self.deps.store {
+                r = r.with_store(store.clone());
+            }
+            Arc::new(r)
+        };
         let repair_interval = self.config.repair_check_interval;
         let repair_channels = self.channels.clone();
         let repair_handle = tokio::spawn(async move {
