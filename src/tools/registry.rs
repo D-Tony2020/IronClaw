@@ -124,17 +124,19 @@ impl ToolRegistry {
     }
 
     /// Register a tool. Rejects dynamic tools that try to shadow a built-in name.
-    pub async fn register(&self, tool: Arc<dyn Tool>) {
+    /// Returns `true` if the tool was registered, `false` if rejected.
+    pub async fn register(&self, tool: Arc<dyn Tool>) -> bool {
         let name = tool.name().to_string();
         if self.builtin_names.read().await.contains(&name) {
             tracing::warn!(
                 tool = %name,
                 "Rejected tool registration: would shadow a built-in tool"
             );
-            return;
+            return false;
         }
         self.tools.write().await.insert(name.clone(), tool);
         tracing::debug!("Registered tool: {}", name);
+        true
     }
 
     /// Register a tool (sync version for startup, marks as built-in).
@@ -555,8 +557,10 @@ impl ToolRegistry {
             wrapper = wrapper.with_oauth_refresh(oauth);
         }
 
-        // Register the tool
-        self.register(Arc::new(wrapper)).await;
+        // Register the tool (may be rejected if it shadows a built-in)
+        if !self.register(Arc::new(wrapper)).await {
+            return Ok(()); // Rejected — warn already logged by register()
+        }
 
         // Add credential mappings to the shared registry (for HTTP tool injection)
         if let Some(cr) = &self.credential_registry

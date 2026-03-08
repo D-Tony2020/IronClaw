@@ -65,6 +65,7 @@ async fn core_registration_covers_expected_tools() {
         "http",
         "json",
         "list_dir",
+        "news_curator",
         "read_file",
         "shell",
         "time",
