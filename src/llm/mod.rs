@@ -60,7 +60,7 @@ pub fn create_llm_provider(
         LlmBackend::OpenAi => create_openai_provider(config),
         LlmBackend::Anthropic => create_anthropic_provider(config),
         LlmBackend::Ollama => create_ollama_provider(config),
-        LlmBackend::OpenAiCompatible => create_openai_compatible_provider(config),
+        LlmBackend::OpenAiCompatible => create_openai_compatible_provider(config, session),
         LlmBackend::Tinfoil => create_tinfoil_provider(config),
     }
 }
@@ -212,7 +212,10 @@ fn create_tinfoil_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, L
     Ok(Arc::new(RigAdapter::new(model, &tf.model)))
 }
 
-fn create_openai_compatible_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
+fn create_openai_compatible_provider(
+    config: &LlmConfig,
+    session: Arc<SessionManager>,
+) -> Result<Arc<dyn LlmProvider>, LlmError> {
     let compat = config
         .openai_compatible
         .as_ref()
@@ -220,51 +223,38 @@ fn create_openai_compatible_provider(config: &LlmConfig) -> Result<Arc<dyn LlmPr
             provider: "openai_compatible".to_string(),
         })?;
 
-    use rig::providers::openai;
+    // Build a NearAiConfig from the OpenAI-compatible settings.
+    // This lets us reuse NearAiChatProvider which properly handles
+    // provider-specific fields like Gemini's thought_signature.
+    let nearai_cfg = NearAiConfig {
+        model: compat.model.clone(),
+        cheap_model: None,
+        base_url: compat.base_url.clone(),
+        auth_base_url: compat.base_url.clone(),
+        session_path: config.nearai.session_path.clone(),
+        api_key: compat.api_key.clone(),
+        fallback_model: None,
+        max_retries: config.nearai.max_retries,
+        circuit_breaker_threshold: config.nearai.circuit_breaker_threshold,
+        circuit_breaker_recovery_secs: config.nearai.circuit_breaker_recovery_secs,
+        response_cache_enabled: config.nearai.response_cache_enabled,
+        response_cache_ttl_secs: config.nearai.response_cache_ttl_secs,
+        response_cache_max_entries: config.nearai.response_cache_max_entries,
+        failover_cooldown_secs: config.nearai.failover_cooldown_secs,
+        failover_cooldown_threshold: config.nearai.failover_cooldown_threshold,
+        smart_routing_cascade: config.nearai.smart_routing_cascade,
+    };
 
-    let mut extra_headers = reqwest::header::HeaderMap::new();
-    for (key, value) in &compat.extra_headers {
-        let name = match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
-            Ok(n) => n,
-            Err(e) => {
-                tracing::warn!(header = %key, error = %e, "Skipping LLM_EXTRA_HEADERS entry: invalid header name");
-                continue;
-            }
-        };
-        let val = match reqwest::header::HeaderValue::from_str(value) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(header = %key, error = %e, "Skipping LLM_EXTRA_HEADERS entry: invalid header value");
-                continue;
-            }
-        };
-        extra_headers.insert(name, val);
-    }
-
-    let client: openai::CompletionsClient = openai::Client::builder()
-        .base_url(&compat.base_url)
-        .api_key(
-            compat
-                .api_key
-                .as_ref()
-                .map(|k| k.expose_secret().to_string())
-                .unwrap_or_else(|| "no-key".to_string()),
-        )
-        .http_headers(extra_headers)
-        .build()
-        .map_err(|e| LlmError::RequestFailed {
-            provider: "openai_compatible".to_string(),
-            reason: format!("Failed to create OpenAI-compatible client: {}", e),
-        })?
-        .completions_api();
-
-    let model = client.completion_model(&compat.model);
     tracing::info!(
         "Using OpenAI-compatible endpoint (chat completions, base_url: {}, model: {})",
         compat.base_url,
         compat.model
     );
-    Ok(Arc::new(RigAdapter::new(model, &compat.model)))
+    // flatten_tool_messages = false: Gemini natively supports role:tool messages
+    // and requires thought_signature pass-through which NearAiChatProvider handles.
+    Ok(Arc::new(NearAiChatProvider::new_with_flatten(
+        nearai_cfg, session, false,
+    )?))
 }
 
 /// Create a cheap/fast LLM provider for lightweight tasks (heartbeat, routing, evaluation).

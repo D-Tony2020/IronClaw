@@ -530,6 +530,13 @@ impl LlmProvider for NearAiChatProvider {
             .map(|tc| {
                 let arguments = serde_json::from_str(&tc.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
+                tracing::info!(
+                    tool_call_id = %tc.id,
+                    tool_name = %tc.function.name,
+                    extra_keys = ?tc.extra.keys().collect::<Vec<_>>(),
+                    extra_json = %serde_json::to_string(&tc.extra).unwrap_or_default(),
+                    "Parsed tool call — extra fields captured from response"
+                );
                 ToolCall {
                     id: tc.id,
                     name: tc.function.name,
@@ -865,14 +872,23 @@ impl From<ChatMessage> for ChatCompletionMessage {
         let tool_calls = msg.tool_calls.map(|calls| {
             calls
                 .into_iter()
-                .map(|tc| ChatCompletionToolCall {
-                    id: tc.id,
-                    call_type: "function".to_string(),
-                    function: ChatCompletionToolCallFunction {
-                        name: tc.name,
-                        arguments: tc.arguments.to_string(),
-                    },
-                    extra: tc.extra,
+                .map(|tc| {
+                    tracing::info!(
+                        tool_call_id = %tc.id,
+                        tool_name = %tc.name,
+                        extra_keys = ?tc.extra.keys().collect::<Vec<_>>(),
+                        extra_json = %serde_json::to_string(&tc.extra).unwrap_or_default(),
+                        "Building outgoing tool call — extra fields being sent"
+                    );
+                    ChatCompletionToolCall {
+                        id: tc.id,
+                        call_type: "function".to_string(),
+                        function: ChatCompletionToolCallFunction {
+                            name: tc.name,
+                            arguments: tc.arguments.to_string(),
+                        },
+                        extra: tc.extra,
+                    }
                 })
                 .collect()
         });
